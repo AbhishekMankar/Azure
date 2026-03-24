@@ -1,0 +1,3 @@
+SELECT *
+FROM transactions_header
+WHERE updated_at > '@{pipeline().parameters.last_watermark}'

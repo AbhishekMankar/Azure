@@ -1,0 +1,9 @@
+ADF Pipeline Steps:
+
+1. Lookup Activity → Get last watermark
+2. Copy Activity 1 → Header → ADLS /bronze/transactions_header/
+3. Copy Activity 2 → Items → ADLS /bronze/transaction_items/
+4. Stored Procedure → Update watermark
+
+Sink Format: Parquet
+Partition By: ingestion_date (yyyy-MM-dd)
