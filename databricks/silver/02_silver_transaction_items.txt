@@ -1,0 +1,44 @@
+from pyspark.sql.functions import *
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
+import config
+
+items_stream = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", config.ITEMS_CHECKPOINT + "schema/")
+    .load(config.ITEMS_BRONZE_PATH)
+)
+
+def upsert_items(microBatchDF, batchId):
+
+    window_spec = Window.partitionBy("item_id") \
+                        .orderBy(col("updated_at").desc())
+
+    dedup_df = (
+        microBatchDF
+        .withColumn("rn", row_number().over(window_spec))
+        .filter("rn = 1")
+        .drop("rn")
+    )
+
+    if DeltaTable.isDeltaTable(spark, config.ITEMS_SILVER_PATH):
+        delta_table = DeltaTable.forPath(spark, config.ITEMS_SILVER_PATH)
+
+        delta_table.alias("t").merge(
+            dedup_df.alias("s"),
+            "t.item_id = s.item_id"
+        ).whenMatchedUpdateAll() \
+         .whenNotMatchedInsertAll() \
+         .execute()
+    else:
+        dedup_df.write.format("delta").save(config.ITEMS_SILVER_PATH)
+
+(
+    items_stream.writeStream
+    .foreachBatch(upsert_items)
+    .option("checkpointLocation", config.ITEMS_CHECKPOINT)
+    .trigger(availableNow=True)
+    .start()
+)

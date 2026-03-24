@@ -1,0 +1,14 @@
+import config
+from pyspark.sql.functions import *
+
+header_df = spark.read.format("delta").load(config.HEADER_SILVER_PATH)
+items_df = spark.read.format("delta").load(config.ITEMS_SILVER_PATH)
+
+curated_df = header_df.join(items_df, "transaction_id", "inner")
+
+curated_df = curated_df.filter(col("quantity") > 0)
+curated_df = curated_df.filter(col("line_total") >= 0)
+
+curated_df.write.format("delta") \
+    .mode("overwrite") \
+    .save(config.CURATED_SILVER_PATH)

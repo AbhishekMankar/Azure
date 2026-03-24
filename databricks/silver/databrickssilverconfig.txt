@@ -1,0 +1,13 @@
+BRONZE_BASE_PATH = "/mnt/retail/bronze/"
+SILVER_BASE_PATH = "/mnt/retail/silver/"
+CHECKPOINT_BASE_PATH = "/mnt/retail/checkpoints/"
+
+HEADER_BRONZE_PATH = BRONZE_BASE_PATH + "transactions_header/"
+ITEMS_BRONZE_PATH = BRONZE_BASE_PATH + "transaction_items/"
+
+HEADER_SILVER_PATH = SILVER_BASE_PATH + "transactions_header/"
+ITEMS_SILVER_PATH = SILVER_BASE_PATH + "transaction_items/"
+CURATED_SILVER_PATH = SILVER_BASE_PATH + "silver_transactions/"
+
+HEADER_CHECKPOINT = CHECKPOINT_BASE_PATH + "header_stream/"
+ITEMS_CHECKPOINT = CHECKPOINT_BASE_PATH + "items_stream/"

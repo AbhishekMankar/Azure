@@ -1,0 +1,44 @@
+from pyspark.sql.functions import *
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
+import config
+
+header_stream = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.schemaLocation", config.HEADER_CHECKPOINT + "schema/")
+    .load(config.HEADER_BRONZE_PATH)
+)
+
+def upsert_header(microBatchDF, batchId):
+
+    window_spec = Window.partitionBy("transaction_id") \
+                        .orderBy(col("updated_at").desc())
+
+    dedup_df = (
+        microBatchDF
+        .withColumn("rn", row_number().over(window_spec))
+        .filter("rn = 1")
+        .drop("rn")
+    )
+
+    if DeltaTable.isDeltaTable(spark, config.HEADER_SILVER_PATH):
+        delta_table = DeltaTable.forPath(spark, config.HEADER_SILVER_PATH)
+
+        delta_table.alias("t").merge(
+            dedup_df.alias("s"),
+            "t.transaction_id = s.transaction_id"
+        ).whenMatchedUpdateAll() \
+         .whenNotMatchedInsertAll() \
+         .execute()
+    else:
+        dedup_df.write.format("delta").save(config.HEADER_SILVER_PATH)
+
+(
+    header_stream.writeStream
+    .foreachBatch(upsert_header)
+    .option("checkpointLocation", config.HEADER_CHECKPOINT)
+    .trigger(availableNow=True)
+    .start()
+)
