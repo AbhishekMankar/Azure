@@ -1,0 +1,36 @@
+-- ============================================
+-- Create Transactions Header Table
+-- ============================================
+
+CREATE TABLE transactions_header (
+    transaction_id INT PRIMARY KEY,
+    transaction_date DATETIME,
+    store_id INT,
+    store_name VARCHAR(100),
+    store_city VARCHAR(100),
+    store_state VARCHAR(50),
+    customer_id INT,
+    customer_name VARCHAR(100),
+    customer_type VARCHAR(50),
+    loyalty_tier VARCHAR(50),
+    total_amount DECIMAL(18,2),
+    updated_at DATETIME
+);
+
+-- ============================================
+-- Create Transaction Items Table
+-- ============================================
+
+CREATE TABLE transaction_items (
+    item_id INT PRIMARY KEY,
+    transaction_id INT,
+    product_id INT,
+    product_name VARCHAR(200),
+    category VARCHAR(100),
+    subcategory VARCHAR(100),
+    brand VARCHAR(100),
+    quantity INT,
+    unit_price DECIMAL(18,2),
+    line_total DECIMAL(18,2),
+    updated_at DATETIME
+);

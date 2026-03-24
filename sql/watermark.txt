@@ -1,0 +1,7 @@
+CREATE TABLE watermark_table (
+    table_name VARCHAR(100),
+    last_updated_at DATETIME
+);
+
+INSERT INTO watermark_table VALUES ('transactions_header', '1900-01-01');
+INSERT INTO watermark_table VALUES ('transaction_items', '1900-01-01');
