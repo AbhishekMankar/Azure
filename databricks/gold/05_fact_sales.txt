@@ -1,0 +1,19 @@
+import config
+from pyspark.sql.functions import *
+
+df = spark.read.format("delta").load(config.SILVER_PATH)
+
+fact_sales = df.select(
+    "transaction_id",
+    col("transaction_date").alias("date"),
+    "store_id",
+    "product_id",
+    "customer_id",
+    "quantity",
+    "unit_price",
+    "line_total"
+)
+
+fact_sales.write.format("delta") \
+    .mode("overwrite") \
+    .save(config.FACT_SALES_PATH)

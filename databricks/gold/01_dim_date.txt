@@ -1,0 +1,21 @@
+from pyspark.sql.functions import *
+import config
+
+silver_df = spark.read.format("delta").load(config.SILVER_JOINED_PATH)
+
+date_df = silver_df.select(
+    to_date("transaction_date").alias("date")
+).distinct()
+
+dim_date = date_df.select(
+    col("date"),
+    year("date").alias("year"),
+    quarter("date").alias("quarter"),
+    month("date").alias("month"),
+    monthname("date").alias("month_name"),
+    dayofmonth("date").alias("day"),
+    dayofweek("date").alias("day_of_week"),
+    weekofyear("date").alias("week_of_year")
+)
+
+dim_date.write.format("delta").mode("overwrite").save(config.DIM_DATE_PATH)
