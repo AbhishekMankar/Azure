@@ -1,0 +1,200 @@
+# ============================================================
+# Power BI Setup — Anomaly Detection Dashboard
+# File: powerbi/powerbi_anomaly_setup.txt
+# Project: Retail Lakehouse — Azure
+# Author: Abhishek Mankar
+# ============================================================
+#
+# Covers:
+#   - Step 1: Connect Power BI to Databricks
+#   - Step 2: Import tables + define relationships
+#   - Step 3: DAX measures
+#   - Step 4: Dashboard Page 1 — Live Anomaly Monitor
+#   - Step 5: Dashboard Page 2 — Product Deep Dive
+#   - Step 6: Conditional formatting
+#   - Step 7: Publish
+# ============================================================
+
+
+# ── STEP 1: Connect Power BI to Databricks ──────────────────
+
+1. Open Power BI Desktop
+2. Click Get Data → Search "Azure Databricks" → Select it
+3. Fill in:
+     Server:    <your-workspace>.azuredatabricks.net
+     HTTP Path: copy from Databricks > SQL Warehouses > Connection Details
+     Mode:      DirectQuery
+4. Click OK → Sign in with Azure credentials
+
+
+# ── STEP 2: Import Tables + Define Relationships ────────────
+
+Tables to import:
+  - fact_anomaly_scores
+  - fact_sales
+  - dim_product
+  - dim_store
+  - dim_date
+
+Relationships (all Many to One, Single direction):
+  fact_anomaly_scores.product_id  →  dim_product.product_id
+  fact_anomaly_scores.store_id    →  dim_store.store_id
+  fact_anomaly_scores.date        →  dim_date.date
+  fact_sales.product_id           →  dim_product.product_id
+  fact_sales.store_id             →  dim_store.store_id
+  fact_sales.date                 →  dim_date.date
+
+
+# ── STEP 3: DAX Measures ────────────────────────────────────
+# Create these in fact_anomaly_scores table
+# Home → New Measure → paste formula → Enter
+
+# 3.1 Total Anomalies Today
+Total Anomalies Today =
+CALCULATE(
+    COUNTROWS(fact_anomaly_scores),
+    fact_anomaly_scores[is_anomaly] = TRUE(),
+    fact_anomaly_scores[date] = TODAY()
+)
+
+# 3.2 Anomaly Rate %
+Anomaly Rate % =
+DIVIDE(
+    CALCULATE(
+        COUNTROWS(fact_anomaly_scores),
+        fact_anomaly_scores[is_anomaly] = TRUE()
+    ),
+    COUNTROWS(fact_anomaly_scores),
+    0
+) * 100
+
+# 3.3 Sales vs Expected
+Sales vs Expected =
+SUM(fact_anomaly_scores[total_quantity])
+- SUM(fact_anomaly_scores[expected_value])
+
+# 3.4 Avg Anomaly Score
+Avg Anomaly Score =
+CALCULATE(
+    AVERAGE(fact_anomaly_scores[anomaly_score]),
+    fact_anomaly_scores[is_anomaly] = TRUE()
+)
+
+# 3.5 Last Refreshed (place top-right on every page)
+Last Refreshed =
+"Data current as of: " & FORMAT(NOW(), "DD MMM YYYY HH:MM")
+
+
+# ── STEP 4: Page 1 — Live Anomaly Monitor ───────────────────
+# This is the page a store manager opens every morning.
+# Shows ranked list of products behaving unusually right now.
+
+# --- KPI Cards (top row — 4 cards) ---
+Card 1:  Total Anomalies Today
+Card 2:  Anomaly Rate %
+Card 3:  Avg Anomaly Score
+Card 4:  Sales vs Expected
+
+# --- Main Anomaly Table (middle) ---
+Visual type: Table
+Columns:
+  dim_product[product_name]
+  dim_product[category]
+  dim_store[store_name]
+  fact_anomaly_scores[hour]
+  fact_anomaly_scores[total_quantity]
+  fact_anomaly_scores[expected_value]
+  fact_anomaly_scores[anomaly_score]
+  fact_anomaly_scores[severity]
+
+Filters:
+  fact_anomaly_scores[is_anomaly] = TRUE
+  fact_anomaly_scores[date] = TODAY()
+
+Sort by: anomaly_score descending
+
+Purpose:
+  Managers see a ranked action list — highest priority anomaly
+  at the top. Red rows need immediate attention.
+
+# --- Anomalies by Department Bar Chart (bottom) ---
+Visual type: Bar chart (clustered)
+X-axis: dim_product[category]
+Y-axis: Count of fact_anomaly_scores[is_anomaly]
+Filter: is_anomaly = TRUE, date = TODAY()
+Purpose: Which department has the most unusual activity?
+
+
+# ── STEP 5: Page 2 — Product Deep Dive ─────────────────────
+# Drill into any single product to see exactly what happened.
+
+# --- Slicers (top) ---
+Slicer 1: dim_product[product_name]
+Slicer 2: dim_store[store_name]
+Slicer 3: dim_date[date]
+
+# --- Actual vs Expected Line Chart (main visual) ---
+Visual type: Line chart
+X-axis: fact_anomaly_scores[hour]
+Lines:
+  SUM(fact_anomaly_scores[total_quantity])   → label: Actual Sales (solid)
+  SUM(fact_anomaly_scores[expected_value])   → label: Expected (solid grey)
+  SUM(fact_anomaly_scores[upper_bound])      → label: Upper Bound (dashed)
+  SUM(fact_anomaly_scores[lower_bound])      → label: Lower Bound (dashed)
+
+What to look for:
+  When the Actual line crosses above the Upper Bound dashed line
+  → that hour is your anomaly.
+  When Actual drops below Lower Bound
+  → unexpected drop (empty shelf / pricing issue).
+
+# --- Anomaly Points Table (below chart) ---
+Visual type: Table
+Filter: is_anomaly = TRUE
+Columns:
+  fact_anomaly_scores[hour]
+  fact_anomaly_scores[total_quantity]   (Actual)
+  fact_anomaly_scores[expected_value]   (Expected)
+  fact_anomaly_scores[anomaly_score]
+  fact_anomaly_scores[severity]
+
+
+# ── STEP 6: Conditional Formatting ─────────────────────────
+# Apply to severity column in the anomaly table on Page 1:
+# Select column → Format → Conditional formatting → Background color → Field value
+
+Severity    Hex Color    Meaning
+--------    ---------    -------
+High        #FF4444      Immediate action required
+Medium      #FF8C00      Monitor closely
+Low         #FFD700      Mild deviation
+Normal      #00C851      No action needed
+
+
+# ── STEP 7: Page Navigation Button ─────────────────────────
+# Connect Page 1 to the Forecast dashboard (powerbi_forecast_setup.txt):
+# Insert → Buttons → Page Navigation
+# Label: "View Demand Forecast →"
+# This lets managers move from anomaly view to forecast view.
+
+
+# ── STEP 8: Publish ─────────────────────────────────────────
+1. Click Publish in Power BI Desktop
+2. Select your workspace
+3. Go to powerbi.com → open report → share with stakeholders
+
+Note: DirectQuery means no scheduled refresh is needed.
+Every dashboard interaction queries the live Gold Delta tables.
+Data reflects the latest pipeline run automatically.
+
+
+# ── NOTEBOOK DEPENDENCY ─────────────────────────────────────
+# fact_anomaly_scores is produced by:
+#   databricks/gold/07_anomaly_detection.py
+#
+# Which depends on:
+#   databricks/gold/06_fact_sales_hourly.py
+#
+# Full execution order:
+#   Silver: 01 → 02 → 03
+#   Gold:   01 → 02 → 03 → 04 → 05 → 06 → 07

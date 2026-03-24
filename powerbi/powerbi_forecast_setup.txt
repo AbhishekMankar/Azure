@@ -1,0 +1,231 @@
+# ============================================================
+# Power BI Setup — Demand Forecasting Dashboard
+# File: powerbi/powerbi_forecast_setup.txt
+# Project: Retail Lakehouse — Azure
+# Author: Abhishek Mankar
+# ============================================================
+#
+# Covers:
+#   - Step 1: Add fact_sales_forecast to existing report
+#   - Step 2: Additional relationships
+#   - Step 3: DAX measures
+#   - Step 4: Dashboard Page 3 — Demand Forecast
+#   - Step 5: Forecast vs Actual validation visual
+#   - Step 6: Demand heatmap by hour and department
+#   - Step 7: Publish
+#
+# Pre-requisite:
+#   Complete powerbi_anomaly_setup.txt first.
+#   This file adds Page 3 to the existing report.
+# ============================================================
+
+
+# ── STEP 1: Add fact_sales_forecast to Existing Report ──────
+
+1. Open your existing Power BI report (from anomaly setup)
+2. Home → Transform Data → New Source → Azure Databricks
+3. Add table: fact_sales_forecast
+4. Mode: DirectQuery (same as other tables)
+5. Click Load
+
+
+# ── STEP 2: Additional Relationships ────────────────────────
+# Add these in Model view (in addition to existing relationships):
+
+fact_sales_forecast.product_id    →  dim_product.product_id
+fact_sales_forecast.store_id      →  dim_store.store_id
+fact_sales_forecast.forecast_date →  dim_date.date
+
+All: Many to One, Single direction filter
+
+
+# ── STEP 3: DAX Measures ────────────────────────────────────
+# Create these in fact_sales_forecast table
+# Home → New Measure → paste formula → Enter
+
+# 3.1 Forecasted Demand Tomorrow
+Forecasted Demand Tomorrow =
+CALCULATE(
+    SUM(fact_sales_forecast[forecasted_quantity]),
+    fact_sales_forecast[forecast_date] = TODAY() + 1
+)
+
+# 3.2 Forecast Accuracy %
+# Compares yesterday's forecast to actual sales — builds trust in the model
+Forecast Accuracy % =
+VAR actual =
+    CALCULATE(
+        SUM(fact_sales[quantity]),
+        fact_sales[date] = TODAY() - 1
+    )
+VAR forecasted =
+    CALCULATE(
+        SUM(fact_sales_forecast[forecasted_quantity]),
+        fact_sales_forecast[forecast_date] = TODAY() - 1
+    )
+RETURN
+    IF(
+        actual = 0, BLANK(),
+        (1 - DIVIDE(ABS(actual - forecasted), actual)) * 100
+    )
+
+# 3.3 High Demand Hours Tomorrow
+# Count of hours where forecast is close to or above upper bound
+High Demand Hours Tomorrow =
+CALCULATE(
+    COUNTROWS(fact_sales_forecast),
+    fact_sales_forecast[forecast_date] = TODAY() + 1,
+    fact_sales_forecast[forecasted_quantity]
+        > fact_sales_forecast[upper_bound] * 0.8
+)
+
+# 3.4 Demand Gap
+# How much headroom exists between forecast and upper confidence bound
+Demand Gap =
+SUM(fact_sales_forecast[upper_bound])
+- SUM(fact_sales_forecast[forecasted_quantity])
+
+# 3.5 Last Refreshed (place top-right — same as anomaly page)
+Last Refreshed =
+"Data current as of: " & FORMAT(NOW(), "DD MMM YYYY HH:MM")
+
+
+# ── STEP 4: Page 3 — Demand Forecast ────────────────────────
+# Add a new page to your report. Name it "Demand Forecast".
+# This page answers: what will happen tomorrow?
+
+# --- KPI Cards (top row — 4 cards) ---
+Card 1:  Forecasted Demand Tomorrow
+Card 2:  Forecast Accuracy %          ← builds confidence in the model
+Card 3:  High Demand Hours Tomorrow
+Card 4:  fact_sales_forecast[training_rows_used]  ← shows model is data-rich
+
+# --- Slicers ---
+Slicer 1: dim_product[product_name]
+Slicer 2: dim_store[store_name]
+Slicer 3: fact_sales_forecast[forecast_date]
+
+# --- Forecast Line Chart (main visual — full width) ---
+Visual type: Line chart
+X-axis: fact_sales_forecast[forecast_hour]
+Lines:
+  SUM(fact_sales_forecast[forecasted_quantity])  → Forecast (solid blue)
+  SUM(fact_sales_forecast[upper_bound])          → Upper Bound (dashed)
+  SUM(fact_sales_forecast[lower_bound])          → Lower Bound (dashed)
+
+What to look for:
+  Peak hours where the forecast line rises sharply
+  → pre-position stock and staff before that hour
+  Wide gap between upper and lower bound
+  → model is less certain, monitor closely
+
+# --- Top 10 Products by Forecasted Demand Tomorrow ---
+Visual type: Horizontal Bar chart
+Y-axis: dim_product[product_name]
+X-axis: SUM(fact_sales_forecast[forecasted_quantity])
+Filter: forecast_date = TODAY() + 1
+Sort: descending by forecasted_quantity
+Purpose: Which products need the most stock ready tomorrow morning?
+
+
+# ── STEP 5: Forecast vs Actual Validation Visual ────────────
+# Shows how accurate yesterday's forecast was — builds stakeholder trust.
+
+Visual type: Clustered Bar chart
+X-axis: dim_product[product_name]
+Bar 1: SUM(fact_sales[quantity])                    → Actual Yesterday
+Bar 2: SUM(fact_sales_forecast[forecasted_quantity]) → Forecasted Yesterday
+Filter: date / forecast_date = TODAY() - 1
+Purpose: Side by side comparison of forecast vs what actually happened.
+
+
+# ── STEP 6: Demand Heatmap by Hour and Department ───────────
+# Most impressive visual on this page — shows at a glance
+# which department peaks at which hour tomorrow.
+
+Visual type: Matrix
+Rows:    dim_product[category]
+Columns: fact_sales_forecast[forecast_hour]
+Values:  SUM(fact_sales_forecast[forecasted_quantity])
+
+Conditional formatting on values:
+  Format → Conditional formatting → Background color → Gradient
+  Minimum: white (low demand)
+  Maximum: dark blue (high demand)
+
+Example output:
+  Category      | 8AM | 9AM | 10AM | 11AM | 12PM | 1PM |
+  Toys          |  5  |  8  |  15  |  35  |  28  |  12 |
+  Appliances    |  3  |  6  |  12  |  18  |  22  |  20 |
+  Confectionery |  2  |  4  |   8  |  12  |  30  |  35 |
+
+Use this to:
+  Plan staffing levels by department per hour
+  Schedule stock replenishment before peak hours
+  Identify slow hours for promotions and offers
+
+
+# ── STEP 7: Page Navigation Buttons ─────────────────────────
+# Connect all three pages together:
+
+On Anomaly Monitor page:
+  Insert → Buttons → Page Navigation
+  Label: "View Demand Forecast →"
+
+On Demand Forecast page:
+  Insert → Buttons → Page Navigation
+  Label: "← Back to Anomaly Monitor"
+
+Intelligence loop:
+  Page 1 (Anomaly Monitor)  → What is unusual RIGHT NOW
+      ↓
+  Page 2 (Product Deep Dive) → Where exactly did it happen
+      ↓
+  Page 3 (Demand Forecast)   → What will happen TOMORROW
+
+
+# ── STEP 8: Publish ─────────────────────────────────────────
+1. Click Publish in Power BI Desktop
+2. Select your workspace
+3. Go to powerbi.com → open report → share with stakeholders
+
+Note: DirectQuery means no scheduled refresh is needed.
+Both anomaly and forecast tables update automatically after
+each Databricks pipeline run.
+
+
+# ── NOTEBOOK DEPENDENCY ─────────────────────────────────────
+# fact_sales_forecast is produced by:
+#   databricks/gold/08_prophet_forecasting.py
+#
+# Which depends on:
+#   databricks/gold/06_fact_sales_hourly.py
+#
+# Full Gold execution order:
+#   01_dim_date.py
+#   02_dim_store.py
+#   03_dim_product.py
+#   04_dim_customer.py
+#   05_fact_sales.py
+#   06_fact_sales_hourly.py     ← shared input for both AI notebooks
+#   07_anomaly_detection.py     ← produces fact_anomaly_scores
+#   08_prophet_forecasting.py   ← produces fact_sales_forecast
+
+
+# ── PROPHET MODEL NOTES ─────────────────────────────────────
+# The forecasting model trains on fact_sales_hourly data.
+# Minimum 48 rows per product+store required for training.
+#
+# Seasonalities enabled:
+#   daily_seasonality  = True  (captures intraday hourly patterns)
+#   weekly_seasonality = True  (captures Mon-Sun differences)
+#   weekend seasonality added  (retail Sat/Sun behaves differently)
+#
+# Confidence interval: 95%
+# Forecast horizon: 24 hours ahead
+# All predictions floored at zero — no negative quantity output
+#
+# If Forecast Accuracy % is below 80%:
+#   → Increase MIN_TRAINING_ROWS in config.py (need more history)
+#   → Check for data quality issues in fact_sales_hourly
+#   → Consider lowering changepoint_prior_scale in notebook 08
